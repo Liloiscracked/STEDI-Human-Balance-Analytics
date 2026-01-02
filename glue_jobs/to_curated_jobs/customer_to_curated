@@ -1,0 +1,46 @@
+import sys
+from awsglue.transforms import *
+from awsglue.utils import getResolvedOptions
+from pyspark.context import SparkContext
+from awsglue.context import GlueContext
+from awsglue.job import Job
+from awsgluedq.transforms import EvaluateDataQuality
+from awsglue import DynamicFrame
+
+def sparkSqlQuery(glueContext, query, mapping, transformation_ctx) -> DynamicFrame:
+    for alias, frame in mapping.items():
+        frame.toDF().createOrReplaceTempView(alias)
+    result = spark.sql(query)
+    return DynamicFrame.fromDF(result, glueContext, transformation_ctx)
+args = getResolvedOptions(sys.argv, ['JOB_NAME'])
+sc = SparkContext()
+glueContext = GlueContext(sc)
+spark = glueContext.spark_session
+job = Job(glueContext)
+job.init(args['JOB_NAME'], args)
+
+# Default ruleset used by all target nodes with data quality enabled
+DEFAULT_DATA_QUALITY_RULESET = """
+    Rules = [
+        ColumnCount > 0
+    ]
+"""
+
+# Script generated for node customers_trusted
+customers_trusted_node1767358232853 = glueContext.create_dynamic_frame.from_options(format_options={"multiLine": "false"}, connection_type="s3", format="json", connection_options={"paths": ["s3://mo-project-cutomers-trusted"], "recurse": True}, transformation_ctx="customers_trusted_node1767358232853")
+
+# Script generated for node accelerometer_trusted
+accelerometer_trusted_node1767358259068 = glueContext.create_dynamic_frame.from_options(format_options={"multiLine": "false"}, connection_type="s3", format="json", connection_options={"paths": ["s3://mo-project-accelerometer-trusted"], "recurse": True}, transformation_ctx="accelerometer_trusted_node1767358259068")
+
+# Script generated for node SQL Query
+SqlQuery0 = '''
+select * from customers where customers.email in (select distinct user from accelerometer);
+
+'''
+SQLQuery_node1767358303966 = sparkSqlQuery(glueContext, query = SqlQuery0, mapping = {"accelerometer":accelerometer_trusted_node1767358259068, "customers":customers_trusted_node1767358232853}, transformation_ctx = "SQLQuery_node1767358303966")
+
+# Script generated for node customer_curated
+EvaluateDataQuality().process_rows(frame=SQLQuery_node1767358303966, ruleset=DEFAULT_DATA_QUALITY_RULESET, publishing_options={"dataQualityEvaluationContext": "EvaluateDataQuality_node1767355943968", "enableDataQualityResultsPublishing": True}, additional_options={"dataQualityResultsPublishing.strategy": "BEST_EFFORT", "observations.scope": "ALL"})
+customer_curated_node1767358507924 = glueContext.write_dynamic_frame.from_options(frame=SQLQuery_node1767358303966, connection_type="s3", format="json", connection_options={"path": "s3://mo-project-customers-curated", "partitionKeys": []}, transformation_ctx="customer_curated_node1767358507924")
+
+job.commit()
